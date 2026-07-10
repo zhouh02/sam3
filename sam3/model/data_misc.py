@@ -124,6 +124,11 @@ class FindStage:
     input_points_mask: MyTensor
     input_points_mask__type = torch.bool
 
+    input_masks: Optional[MyTensor] = None
+    input_masks_label: Optional[MyTensor] = None
+    input_masks_mask: Optional[MyTensor] = None
+    input_mask_object_ids: Optional[Any] = None
+
     # We track the object ids referred to by this query.
     # This is beneficial for tracking in videos without the need for pointers.
     object_ids: Optional[List[List]] = None  # List of objects per query

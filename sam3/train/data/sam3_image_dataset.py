@@ -76,6 +76,11 @@ class FindQuery:
     input_bbox: Optional[torch.Tensor] = None
     input_bbox_label: Optional[torch.Tensor] = None
 
+    # Input mask prompt, left unset until mask prompt data flow is added.
+    input_mask: Optional[Any] = None
+    input_mask_label: Optional[Any] = None
+    input_mask_object_id: Optional[Any] = None
+
     # Only for the PVS task
     input_points: Optional[torch.Tensor] = None
 
