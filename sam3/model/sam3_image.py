@@ -541,6 +541,9 @@ class Sam3Image(torch.nn.Module):
             point_embeddings=point_embeddings,
             point_mask=point_mask,
             point_labels=point_labels,
+            mask_prompt_inputs=find_input.input_masks,
+            mask_prompt_labels=find_input.input_masks_label,
+            mask_prompt_mask=find_input.input_masks_mask,
         )
         return geometric_prompt
 
@@ -577,6 +580,9 @@ class Sam3Image(torch.nn.Module):
             box_embeddings=find_input.input_boxes,
             box_mask=find_input.input_boxes_mask,
             box_labels=find_input.input_boxes_label,
+            mask_prompt_inputs=find_input.input_masks,
+            mask_prompt_labels=find_input.input_masks_label,
+            mask_prompt_mask=find_input.input_masks_mask,
         )
 
         # Init vars that are shared across the loop.

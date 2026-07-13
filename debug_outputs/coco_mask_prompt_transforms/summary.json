@@ -1,0 +1,347 @@
+{
+  "seed": 42,
+  "requested_samples": 8,
+  "successful_samples": 8,
+  "skipped_samples": 0,
+  "all_alignment_passed": true,
+  "alignment_iou_threshold": 0.99,
+  "val_transform_config": "sam3/train/configs/eval_base.yaml and sam3/train/configs/roboflow_v100/roboflow_v100_eval.yaml base validation resize/tensor/normalize, augmented here with DecodeRle + full-image crop + deterministic hflip + PadToSizeAPI for manual phase-3 spatial validation.",
+  "samples": [
+    {
+      "dataset_index": 3399,
+      "datapoint_id": 3399,
+      "image_id": 476810,
+      "file_name": "000000476810.jpg",
+      "query_text": "book",
+      "query_category_id": 84,
+      "raw_input_mask_type": "polygon",
+      "prompt_object_id": 4,
+      "target_object_ids": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "raw_target_object_ids": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "num_targets": 5,
+      "num_queries_for_category": 1,
+      "one_query_per_image_category_pass": true,
+      "image_shape": [
+        3,
+        1024,
+        1024
+      ],
+      "input_mask_shape": [
+        1024,
+        1024
+      ],
+      "input_mask_dtype": "torch.uint8",
+      "input_mask_unique_values": [
+        0,
+        1
+      ],
+      "input_mask_area": 3097,
+      "prompt_target_iou": 1.0,
+      "alignment_pass": true,
+      "output_file": "sample_000_476810_book.png"
+    },
+    {
+      "dataset_index": 3946,
+      "datapoint_id": 3946,
+      "image_id": 558854,
+      "file_name": "000000558854.jpg",
+      "query_text": "sandwich",
+      "query_category_id": 54,
+      "raw_input_mask_type": "polygon",
+      "prompt_object_id": 1,
+      "target_object_ids": [
+        0,
+        1
+      ],
+      "raw_target_object_ids": [
+        0,
+        1
+      ],
+      "num_targets": 2,
+      "num_queries_for_category": 1,
+      "one_query_per_image_category_pass": true,
+      "image_shape": [
+        3,
+        1024,
+        1024
+      ],
+      "input_mask_shape": [
+        1024,
+        1024
+      ],
+      "input_mask_dtype": "torch.uint8",
+      "input_mask_unique_values": [
+        0,
+        1
+      ],
+      "input_mask_area": 101164,
+      "prompt_target_iou": 1.0,
+      "alignment_pass": true,
+      "output_file": "sample_001_558854_sandwich.png"
+    },
+    {
+      "dataset_index": 583,
+      "datapoint_id": 583,
+      "image_id": 82688,
+      "file_name": "000000082688.jpg",
+      "query_text": "person",
+      "query_category_id": 1,
+      "raw_input_mask_type": "polygon",
+      "prompt_object_id": 2,
+      "target_object_ids": [
+        0,
+        1,
+        2
+      ],
+      "raw_target_object_ids": [
+        0,
+        1,
+        2
+      ],
+      "num_targets": 3,
+      "num_queries_for_category": 1,
+      "one_query_per_image_category_pass": true,
+      "image_shape": [
+        3,
+        1024,
+        1024
+      ],
+      "input_mask_shape": [
+        1024,
+        1024
+      ],
+      "input_mask_dtype": "torch.uint8",
+      "input_mask_unique_values": [
+        0,
+        1
+      ],
+      "input_mask_area": 226676,
+      "prompt_target_iou": 1.0,
+      "alignment_pass": true,
+      "output_file": "sample_002_82688_person.png"
+    },
+    {
+      "dataset_index": 3340,
+      "datapoint_id": 3340,
+      "image_id": 469192,
+      "file_name": "000000469192.jpg",
+      "query_text": "person",
+      "query_category_id": 1,
+      "raw_input_mask_type": "polygon",
+      "prompt_object_id": 0,
+      "target_object_ids": [
+        0,
+        1
+      ],
+      "raw_target_object_ids": [
+        0,
+        1
+      ],
+      "num_targets": 2,
+      "num_queries_for_category": 1,
+      "one_query_per_image_category_pass": true,
+      "image_shape": [
+        3,
+        1024,
+        1024
+      ],
+      "input_mask_shape": [
+        1024,
+        1024
+      ],
+      "input_mask_dtype": "torch.uint8",
+      "input_mask_unique_values": [
+        0,
+        1
+      ],
+      "input_mask_area": 213,
+      "prompt_target_iou": 1.0,
+      "alignment_pass": true,
+      "output_file": "sample_003_469192_person.png"
+    },
+    {
+      "dataset_index": 3888,
+      "datapoint_id": 3888,
+      "image_id": 548246,
+      "file_name": "000000548246.jpg",
+      "query_text": "tennis racket",
+      "query_category_id": 43,
+      "raw_input_mask_type": "polygon",
+      "prompt_object_id": 1,
+      "target_object_ids": [
+        0,
+        1
+      ],
+      "raw_target_object_ids": [
+        0,
+        1
+      ],
+      "num_targets": 2,
+      "num_queries_for_category": 1,
+      "one_query_per_image_category_pass": true,
+      "image_shape": [
+        3,
+        1024,
+        1024
+      ],
+      "input_mask_shape": [
+        1024,
+        1024
+      ],
+      "input_mask_dtype": "torch.uint8",
+      "input_mask_unique_values": [
+        0,
+        1
+      ],
+      "input_mask_area": 5050,
+      "prompt_target_iou": 1.0,
+      "alignment_pass": true,
+      "output_file": "sample_004_548246_tennis_racket.png"
+    },
+    {
+      "dataset_index": 1427,
+      "datapoint_id": 1427,
+      "image_id": 196843,
+      "file_name": "000000196843.jpg",
+      "query_text": "bicycle",
+      "query_category_id": 2,
+      "raw_input_mask_type": "polygon",
+      "prompt_object_id": 0,
+      "target_object_ids": [
+        0,
+        1,
+        2
+      ],
+      "raw_target_object_ids": [
+        0,
+        1,
+        2
+      ],
+      "num_targets": 3,
+      "num_queries_for_category": 1,
+      "one_query_per_image_category_pass": true,
+      "image_shape": [
+        3,
+        1024,
+        1024
+      ],
+      "input_mask_shape": [
+        1024,
+        1024
+      ],
+      "input_mask_dtype": "torch.uint8",
+      "input_mask_unique_values": [
+        0,
+        1
+      ],
+      "input_mask_area": 25775,
+      "prompt_target_iou": 1.0,
+      "alignment_pass": true,
+      "output_file": "sample_005_196843_bicycle.png"
+    },
+    {
+      "dataset_index": 2636,
+      "datapoint_id": 2636,
+      "image_id": 372260,
+      "file_name": "000000372260.jpg",
+      "query_text": "potted plant",
+      "query_category_id": 64,
+      "raw_input_mask_type": "polygon",
+      "prompt_object_id": 6,
+      "target_object_ids": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "raw_target_object_ids": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "num_targets": 7,
+      "num_queries_for_category": 1,
+      "one_query_per_image_category_pass": true,
+      "image_shape": [
+        3,
+        1024,
+        1024
+      ],
+      "input_mask_shape": [
+        1024,
+        1024
+      ],
+      "input_mask_dtype": "torch.uint8",
+      "input_mask_unique_values": [
+        0,
+        1
+      ],
+      "input_mask_area": 10507,
+      "prompt_target_iou": 1.0,
+      "alignment_pass": true,
+      "output_file": "sample_006_372260_potted_plant.png"
+    },
+    {
+      "dataset_index": 174,
+      "datapoint_id": 174,
+      "image_id": 21879,
+      "file_name": "000000021879.jpg",
+      "query_text": "surfboard",
+      "query_category_id": 42,
+      "raw_input_mask_type": "polygon",
+      "prompt_object_id": 5,
+      "target_object_ids": [
+        4,
+        5,
+        6
+      ],
+      "raw_target_object_ids": [
+        4,
+        5,
+        6
+      ],
+      "num_targets": 3,
+      "num_queries_for_category": 1,
+      "one_query_per_image_category_pass": true,
+      "image_shape": [
+        3,
+        1024,
+        1024
+      ],
+      "input_mask_shape": [
+        1024,
+        1024
+      ],
+      "input_mask_dtype": "torch.uint8",
+      "input_mask_unique_values": [
+        0,
+        1
+      ],
+      "input_mask_area": 8568,
+      "prompt_target_iou": 1.0,
+      "alignment_pass": true,
+      "output_file": "sample_007_21879_surfboard.png"
+    }
+  ],
+  "skips": [],
+  "contact_sheet": "contact_sheet.png"
+}

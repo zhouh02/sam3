@@ -22,6 +22,33 @@ from sam3.train.data.sam3_image_dataset import Datapoint
 from torchvision.transforms import InterpolationMode
 
 
+def _mask_as_batched(mask):
+    if mask.dim() == 2:
+        return mask[None, None], lambda x: x[0, 0]
+    if mask.dim() == 3:
+        return mask[None], lambda x: x[0]
+    raise ValueError(f"Expected mask with shape [H, W] or [C, H, W], got {mask.shape}")
+
+
+def _resize_mask(mask, size):
+    batched_mask, restore_shape = _mask_as_batched(mask)
+    original_dtype = batched_mask.dtype
+    if original_dtype == torch.bool:
+        batched_mask = batched_mask.to(torch.uint8)
+    resized_mask = F.resize(batched_mask, size, interpolation=InterpolationMode.NEAREST)
+    return restore_shape(resized_mask).to(original_dtype)
+
+
+def _pad_mask(mask, padding, v2=False):
+    batched_mask, restore_shape = _mask_as_batched(mask)
+    pad_fn = Fv2.pad if v2 else F.pad
+    if len(padding) == 2:
+        padded_mask = pad_fn(batched_mask, (0, 0, padding[0], padding[1]))
+    else:
+        padded_mask = pad_fn(batched_mask, tuple(padding))
+    return restore_shape(padded_mask)
+
+
 def crop(
     datapoint,
     index,
@@ -77,6 +104,8 @@ def crop(
             query.semantic_target = F.crop(
                 query.semantic_target, int(i), int(j), int(h), int(w)
             )
+        if query.image_id == index and query.input_mask is not None:
+            query.input_mask = F.crop(query.input_mask, int(i), int(j), int(h), int(w))
         if query.image_id == index and query.input_bbox is not None:
             boxes = query.input_bbox
             max_size = torch.as_tensor([w, h], dtype=torch.float32)
@@ -128,6 +157,8 @@ def hflip(datapoint, index):
     for query in datapoint.find_queries:
         if query.semantic_target is not None:
             query.semantic_target = F.hflip(query.semantic_target)
+        if query.image_id == index and query.input_mask is not None:
+            query.input_mask = F.hflip(query.input_mask)
         if query.image_id == index and query.input_bbox is not None:
             boxes = query.input_bbox
             boxes = boxes[:, [2, 1, 0, 3]] * torch.as_tensor(
@@ -216,6 +247,8 @@ def resize(datapoint, index, size, max_size=None, square=False, v2=False):
             query.semantic_target = F.resize(
                 query.semantic_target[None, None], size
             ).squeeze()
+        if query.image_id == index and query.input_mask is not None:
+            query.input_mask = F.resize(query.input_mask[None, None], size).squeeze()
         if query.image_id == index and query.input_bbox is not None:
             boxes = query.input_bbox
             scaled_boxes = boxes * torch.as_tensor(
@@ -310,6 +343,8 @@ def pad(datapoint, index, padding, v2=False):
                     query.semantic_target = F.pad(
                         query.semantic_target[None, None], tuple(padding)
                     ).squeeze()
+        if query.image_id == index and query.input_mask is not None:
+            query.input_mask = _pad_mask(query.input_mask, padding, v2=v2)
         if query.image_id == index and query.input_bbox is not None:
             if len(padding) != 2:
                 query.input_bbox += torch.as_tensor(

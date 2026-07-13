@@ -42,6 +42,8 @@ def convert_my_tensors(obj):
             if field.name in [
                 "input_boxes",
                 "input_boxes_label",
+                "input_masks",
+                "input_masks_label",
             ]:
                 stack_dim = 1
             setattr(
@@ -160,10 +162,18 @@ def collate_fn_api(
             input_boxes_mask=[],
             input_points=[],
             input_points_mask=[],
+            input_masks=[],
+            input_masks_label=[],
+            input_masks_mask=[],
+            input_mask_object_ids=[],
             object_ids=[],
         )
         for _ in range(num_stages)
     ]
+    for stage in stages:
+        stage.input_masks__type = torch.float
+        stage.input_masks_label__type = torch.long
+        stage.input_masks_mask__type = torch.bool
     find_targets = [
         BatchedFindTarget(
             num_boxes=[],
@@ -216,9 +226,9 @@ def collate_fn_api(
                 text_batch.append(q.query_text)
             stages[stage_id].text_ids.append(text_batch.index(q.query_text))
 
-            assert q.inference_metadata is not None, (
-                "inference_metadata must be provided when FindQueryLoaded is created."
-            )
+            assert (
+                q.inference_metadata is not None
+            ), "inference_metadata must be provided when FindQueryLoaded is created."
             for f in fields(q.inference_metadata):
                 getattr(find_metadatas[stage_id], f.name).append(
                     getattr(q.inference_metadata, f.name)
@@ -259,6 +269,43 @@ def collate_fn_api(
                     torch.empty(0, input_points_embedding_dim)
                 )
                 stages[stage_id].input_points_mask.append(torch.empty(0))
+
+            img_h, img_w = data.images[q.image_id].data.shape[-2:]
+            if q.input_mask is not None:
+                assert q.input_mask_label is not None
+                assert q.input_mask_object_id is not None
+                input_mask = q.input_mask
+                if input_mask.dim() == 2:
+                    input_mask = input_mask[None, None]
+                elif input_mask.dim() == 3 and input_mask.shape[0] == 1:
+                    input_mask = input_mask[None]
+                elif input_mask.dim() != 4:
+                    raise ValueError(
+                        f"Expected input_mask shape [H, W] or [1, H, W], got {input_mask.shape}"
+                    )
+                assert input_mask.shape == (1, 1, img_h, img_w)
+
+                stages[stage_id].input_masks.append(input_mask)
+                stages[stage_id].input_masks_label.append(
+                    torch.as_tensor(q.input_mask_label, dtype=torch.long).view(1)
+                )
+                stages[stage_id].input_masks_mask.append(
+                    torch.zeros(1, dtype=torch.bool)
+                )
+                stages[stage_id].input_mask_object_ids.append(
+                    torch.as_tensor(q.input_mask_object_id, dtype=torch.long).view(1)
+                )
+            else:
+                stages[stage_id].input_masks.append(torch.zeros(0, 1, img_h, img_w))
+                stages[stage_id].input_masks_label.append(
+                    torch.zeros(0, dtype=torch.long)
+                )
+                stages[stage_id].input_masks_mask.append(
+                    torch.ones(0, dtype=torch.bool)
+                )
+                stages[stage_id].input_mask_object_ids.append(
+                    torch.full((0,), -1, dtype=torch.long)
+                )
 
             current_out_boxes = []
             current_out_object_ids = []
@@ -325,6 +372,28 @@ def collate_fn_api(
         stages[i].input_boxes_mask = pad_tensor_list_to_longest(
             stages[i].input_boxes_mask, dim=0, pad_val=1
         )
+
+    # Pad input masks to equal sequence lengths
+    for i in range(len(stages)):
+        stages[i].input_masks = pad_tensor_list_to_longest(
+            stages[i].input_masks, dim=0, pad_val=0
+        )
+        stages[i].input_masks_label = pad_tensor_list_to_longest(
+            stages[i].input_masks_label, dim=0, pad_val=0
+        )
+        # Masked-out regions indicated by 1s.
+        stages[i].input_masks_mask = pad_tensor_list_to_longest(
+            stages[i].input_masks_mask, dim=0, pad_val=1
+        )
+        stages[i].input_mask_object_ids = pad_tensor_list_to_longest(
+            stages[i].input_mask_object_ids, dim=0, pad_val=-1
+        )
+        if stages[i].input_mask_object_ids:
+            stages[i].input_mask_object_ids = torch.stack(
+                stages[i].input_mask_object_ids, dim=1
+            )
+        else:
+            stages[i].input_mask_object_ids = torch.empty(0, 0, dtype=torch.long)
 
     # Convert to tensors
     for i in range(len(stages)):

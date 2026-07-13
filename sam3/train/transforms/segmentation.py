@@ -11,6 +11,25 @@ from sam3.model.box_ops import masks_to_boxes
 from sam3.train.data.sam3_image_dataset import Datapoint
 
 
+def _decode_coco_segmentation(segmentation, height, width):
+    if isinstance(segmentation, list):
+        if len(segmentation) == 0:
+            return torch.zeros((height, width), dtype=torch.uint8)
+        segmentation = mask_utils.merge(
+            mask_utils.frPyObjects(segmentation, height, width)
+        )
+    elif isinstance(segmentation, dict) and isinstance(
+        segmentation.get("counts"), list
+    ):
+        segmentation = mask_utils.frPyObjects(segmentation, height, width)
+
+    segmentation = mask_utils.decode(segmentation)
+    if segmentation.ndim == 3:
+        segmentation = np.any(segmentation, axis=2)
+
+    return torch.tensor(segmentation).to(torch.uint8)
+
+
 class InstanceToSemantic(object):
     """Convert instance segmentation to semantic segmentation."""
 
@@ -152,5 +171,29 @@ class DecodeRle:
                     ).squeeze(0)
 
                 assert tuple(query.semantic_target.shape) == imgId2size[query.image_id]
+
+        warning_shown = False
+        for query in datapoint.find_queries:
+            if query.input_mask is not None and not isinstance(
+                query.input_mask, torch.Tensor
+            ):
+                expected_size = imgId2size[query.image_id]
+                query.input_mask = _decode_coco_segmentation(
+                    query.input_mask, *expected_size
+                )
+
+                if tuple(query.input_mask.shape) != expected_size:
+                    if not warning_shown:
+                        print(
+                            f"Warning expected input mask size to be {expected_size} but found {tuple(query.input_mask.shape)}"
+                        )
+                        # Printing only once per datapoint to avoid spam
+                        warning_shown = True
+
+                    query.input_mask = F.resize(
+                        query.input_mask[None], expected_size
+                    ).squeeze(0)
+
+                assert tuple(query.input_mask.shape) == expected_size
 
         return datapoint

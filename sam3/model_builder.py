@@ -20,7 +20,7 @@ from sam3.model.decoder import (
     TransformerEncoderDecoupledCrossAttention,
 )
 from sam3.model.encoder import TransformerEncoderFusion, TransformerEncoderLayer
-from sam3.model.geometry_encoders import SequenceGeometryEncoder
+from sam3.model.geometry_encoders import MaskPromptEncoder, SequenceGeometryEncoder
 from sam3.model.maskformer_segmentation import PixelDecoder, UniversalSegmentationHead
 from sam3.model.memory import (
     CXBlock,
@@ -295,6 +295,10 @@ def _create_geometry_encoder():
         use_act_ckpt=True,
         add_cls=True,
         add_post_encode_proj=True,
+        mask_prompt_encoder=MaskPromptEncoder(
+            d_model=256,
+            position_input_dim=259,
+        ),
     )
     return input_geometry_encoder
 

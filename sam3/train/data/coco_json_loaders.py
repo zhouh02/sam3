@@ -2,7 +2,9 @@
 
 # pyre-unsafe
 
+import copy
 import json
+import random
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
@@ -96,6 +98,17 @@ def ann_to_rle(segm, im_info: Dict) -> Dict:
     return rle
 
 
+def has_valid_segmentation(ann: Dict) -> bool:
+    segmentation = ann.get("segmentation")
+    if segmentation is None:
+        return False
+    if isinstance(segmentation, list):
+        return len(segmentation) > 0
+    if isinstance(segmentation, dict):
+        return bool(segmentation.get("counts")) and bool(segmentation.get("size"))
+    return False
+
+
 # ============================================================================
 # COCO Training API
 # ============================================================================
@@ -113,6 +126,10 @@ class COCO_FROM_JSON:
         prompts=None,
         include_negatives=True,
         category_chunk_size=None,
+        use_mask_prompt: bool = False,
+        min_instances_per_prompt_category: int = 2,
+        prompt_sampling_policy: str = "random",
+        fixed_val_prompt_policy: str = "median_area",
     ):
         """
         Initialize the COCO training API.
@@ -121,22 +138,54 @@ class COCO_FROM_JSON:
             annotation_file (str): Path to COCO JSON annotation file
             prompts: Optional custom prompts for categories
             include_negatives (bool): Whether to include negative examples (categories with no instances)
+            use_mask_prompt (bool): Whether to add same-category mask prompts to eligible queries
+            min_instances_per_prompt_category (int): Minimum number of mask candidates needed to add a prompt
+            prompt_sampling_policy (str): Prompt selection policy, either "random" or "median_area"
+            fixed_val_prompt_policy (str): Stored fixed validation policy for callers that can distinguish splits
         """
+        valid_prompt_policies = {"random", "median_area"}
+        if min_instances_per_prompt_category < 1:
+            raise ValueError("min_instances_per_prompt_category must be >= 1")
+        if prompt_sampling_policy not in valid_prompt_policies:
+            raise ValueError(
+                f"Unsupported prompt_sampling_policy: {prompt_sampling_policy}"
+            )
+        if fixed_val_prompt_policy not in valid_prompt_policies:
+            raise ValueError(
+                f"Unsupported fixed_val_prompt_policy: {fixed_val_prompt_policy}"
+            )
+
         self._raw_data, self._cat_idx_to_text = load_coco_and_group_by_image(
             annotation_file
         )
         self._sorted_cat_ids = sorted(list(self._cat_idx_to_text.keys()))
         self.prompts = None
         self.include_negatives = include_negatives
+        self.use_mask_prompt = use_mask_prompt
+        self.min_instances_per_prompt_category = min_instances_per_prompt_category
+        self.prompt_sampling_policy = prompt_sampling_policy
+        self.fixed_val_prompt_policy = fixed_val_prompt_policy
         self.category_chunk_size = (
             category_chunk_size
             if category_chunk_size is not None
             else len(self._sorted_cat_ids)
         )
-        self.category_chunks = [
-            self._sorted_cat_ids[i : i + self.category_chunk_size]
-            for i in range(0, len(self._sorted_cat_ids), self.category_chunk_size)
-        ]
+        if self.use_mask_prompt:
+            self._datapoint_category_chunks = []
+            for img_idx, raw_data in enumerate(self._raw_data):
+                eligible_category_ids = self._get_eligible_category_ids(
+                    raw_data["annotations"]
+                )
+                self._datapoint_category_chunks.extend(
+                    (img_idx, chunk)
+                    for chunk in self._chunk_category_ids(eligible_category_ids)
+                )
+            self.category_chunks = [
+                chunk for _, chunk in self._datapoint_category_chunks
+            ]
+        else:
+            self._datapoint_category_chunks = None
+            self.category_chunks = self._chunk_category_ids(self._sorted_cat_ids)
         if prompts is not None:
             prompts = eval(prompts)
             self.prompts = {}
@@ -146,8 +195,54 @@ class COCO_FROM_JSON:
                 "Number of prompts must match number of categories"
             )
 
+    def _chunk_category_ids(self, category_ids):
+        return [
+            category_ids[i : i + self.category_chunk_size]
+            for i in range(0, len(category_ids), self.category_chunk_size)
+        ]
+
+    def _group_annotations_by_category(self, annotations):
+        cat_id_to_anns = defaultdict(list)
+        for ann in annotations:
+            cat_id_to_anns[ann["category_id"]].append(ann)
+        return cat_id_to_anns
+
+    def _get_prompt_candidates(self, anns):
+        return [ann for ann in anns if has_valid_segmentation(ann)]
+
+    def _get_eligible_category_ids(self, annotations):
+        if not self.use_mask_prompt:
+            return self._sorted_cat_ids
+
+        cat_id_to_anns = self._group_annotations_by_category(annotations)
+        eligible_category_ids = []
+        for cat_id in self._sorted_cat_ids:
+            prompt_candidates = self._get_prompt_candidates(cat_id_to_anns[cat_id])
+            if (
+                len(prompt_candidates)
+                >= self.min_instances_per_prompt_category
+            ):
+                eligible_category_ids.append(cat_id)
+        return eligible_category_ids
+
+    def _select_prompt_annotation(self, prompt_candidates):
+        if self.prompt_sampling_policy == "random":
+            return random.choice(prompt_candidates)
+
+        if self.prompt_sampling_policy == "median_area":
+            sorted_candidates = sorted(
+                prompt_candidates, key=lambda ann: (ann["area"], ann["id"])
+            )
+            return sorted_candidates[len(sorted_candidates) // 2]
+
+        raise ValueError(
+            f"Unsupported prompt_sampling_policy: {self.prompt_sampling_policy}"
+        )
+
     def getDatapointIds(self):
         """Return all datapoint indices for training."""
+        if self.use_mask_prompt:
+            return list(range(len(self._datapoint_category_chunks)))
         return list(range(len(self._raw_data) * len(self.category_chunks)))
 
     def loadQueriesAndAnnotationsFromDatapoint(self, idx):
@@ -160,9 +255,12 @@ class COCO_FROM_JSON:
         Returns:
             Tuple of (queries, annotations) lists
         """
-        img_idx = idx // len(self.category_chunks)
-        chunk_idx = idx % len(self.category_chunks)
-        cat_chunk = self.category_chunks[chunk_idx]
+        if self.use_mask_prompt:
+            img_idx, cat_chunk = self._datapoint_category_chunks[idx]
+        else:
+            img_idx = idx // len(self.category_chunks)
+            chunk_idx = idx % len(self.category_chunks)
+            cat_chunk = self.category_chunks[chunk_idx]
 
         queries = []
         annotations = []
@@ -197,9 +295,7 @@ class COCO_FROM_JSON:
         width, height = image_info["width"], image_info["height"]
 
         # Group annotations by category
-        cat_id_to_anns = defaultdict(list)
-        for ann in raw_annotations:
-            cat_id_to_anns[ann["category_id"]].append(ann)
+        cat_id_to_anns = self._group_annotations_by_category(raw_annotations)
 
         annotations_by_cat_sorted = [
             (cat_id, cat_id_to_anns[cat_id]) for cat_id in cat_chunk
@@ -210,6 +306,7 @@ class COCO_FROM_JSON:
                 continue
 
             cur_ann_ids = []
+            prompt_candidates = []
 
             # Create annotations for this category
             for ann in anns:
@@ -237,6 +334,20 @@ class COCO_FROM_JSON:
 
                 annotations.append(annotation)
                 cur_ann_ids.append(annotation["id"])
+                if has_valid_segmentation(ann):
+                    prompt_candidates.append(
+                        {
+                            "id": annotation["id"],
+                            "segmentation": ann["segmentation"],
+                            "area": ann.get("area", annotation["area"]),
+                        }
+                    )
+
+            if (
+                self.use_mask_prompt
+                and len(prompt_candidates) < self.min_instances_per_prompt_category
+            ):
+                continue
 
             # Create query for this category
             query = query_template.copy()
@@ -248,6 +359,14 @@ class COCO_FROM_JSON:
                 else self.prompts[cat_id]
             )
             query["object_ids_output"] = cur_ann_ids
+            if (
+                self.use_mask_prompt
+                and len(prompt_candidates) >= self.min_instances_per_prompt_category
+            ):
+                prompt_ann = self._select_prompt_annotation(prompt_candidates)
+                query["input_mask"] = copy.deepcopy(prompt_ann["segmentation"])
+                query["input_mask_label"] = 1
+                query["input_mask_object_id"] = prompt_ann["id"]
             queries.append(query)
 
         return queries, annotations
@@ -262,7 +381,10 @@ class COCO_FROM_JSON:
         Returns:
             List containing image info dict
         """
-        img_idx = idx // len(self.category_chunks)
+        if self.use_mask_prompt:
+            img_idx = self._datapoint_category_chunks[idx][0]
+        else:
+            img_idx = idx // len(self.category_chunks)
         img_data = self._raw_data[img_idx]["image"]
         images = [
             {

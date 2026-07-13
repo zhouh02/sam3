@@ -110,12 +110,16 @@ class Prompt:
         mask_embeddings=None,
         mask_mask=None,  # Attention mask for mask prompt
         mask_labels=None,
+        mask_prompt_inputs=None,
+        mask_prompt_mask=None,
+        mask_prompt_labels=None,
     ):
         # Check for null prompt
         if (
             box_embeddings is None
             and point_embeddings is None
             and mask_embeddings is None
+            and mask_prompt_inputs is None
         ):
             self.box_embeddings = None
             self.box_labels = None
@@ -127,11 +131,17 @@ class Prompt:
             self.mask_mask = None
             # Masks are assumed positive only for now.
             self.mask_labels = None
+            self.mask_prompt_inputs = None
+            self.mask_prompt_mask = None
+            self.mask_prompt_labels = None
             return
         # Get sequence lengths and device
-        box_seq_len, point_seq_len, mask_seq_len, bs, device = (
+        box_seq_len, point_seq_len, mask_seq_len, mask_prompt_seq_len, bs, device = (
             self._init_seq_len_and_device(
-                box_embeddings, point_embeddings, mask_embeddings
+                box_embeddings,
+                point_embeddings,
+                mask_embeddings,
+                mask_prompt_inputs,
             )
         )
 
@@ -144,6 +154,14 @@ class Prompt:
         )
         mask_embeddings, mask_labels, mask_mask = self._init_mask(
             mask_embeddings, mask_labels, mask_mask, mask_seq_len, bs, device
+        )
+        mask_prompt_inputs, mask_prompt_labels, mask_prompt_mask = self._init_mask(
+            mask_prompt_inputs,
+            mask_prompt_labels,
+            mask_prompt_mask,
+            mask_prompt_seq_len,
+            bs,
+            device,
         )
 
         # Dimension checks
@@ -200,6 +218,18 @@ class Prompt:
         ], (
             f"Wrong dimension for mask attn. mask. Expected [{bs}, {mask_seq_len}] got {mask_mask.shape}"
         )
+        assert (
+            mask_prompt_inputs is None
+            or list(mask_prompt_inputs.shape[:2]) == [mask_prompt_seq_len, bs]
+        )
+        assert mask_prompt_labels is not None and list(mask_prompt_labels.shape) == [
+            mask_prompt_seq_len,
+            bs,
+        ]
+        assert mask_prompt_mask is not None and list(mask_prompt_mask.shape) == [
+            bs,
+            mask_prompt_seq_len,
+        ]
 
         # Device checks
         assert box_embeddings is not None and box_embeddings.device == device, (
@@ -226,6 +256,9 @@ class Prompt:
         assert mask_mask is None or mask_mask.device == device, (
             f"Expected mask attn. mask to be on device {device}, got {mask_mask.device}"
         )
+        assert mask_prompt_inputs is None or mask_prompt_inputs.device == device
+        assert mask_prompt_labels.device == device
+        assert mask_prompt_mask.device == device
 
         self.box_embeddings = box_embeddings
         self.point_embeddings = point_embeddings
@@ -236,9 +269,12 @@ class Prompt:
         self.mask_embeddings = mask_embeddings
         self.mask_labels = mask_labels
         self.mask_mask = mask_mask
+        self.mask_prompt_inputs = mask_prompt_inputs
+        self.mask_prompt_labels = mask_prompt_labels
+        self.mask_prompt_mask = mask_prompt_mask
 
     def _init_seq_len_and_device(
-        self, box_embeddings, point_embeddings, mask_embeddings
+        self, box_embeddings, point_embeddings, mask_embeddings, mask_prompt_inputs
     ):
         box_seq_len = point_seq_len = mask_seq_len = 0
         bs = None
@@ -278,7 +314,26 @@ class Prompt:
             else:
                 device = mask_embeddings.device
 
-        return box_seq_len, point_seq_len, mask_seq_len, bs, device
+        mask_prompt_seq_len = 0
+        if mask_prompt_inputs is not None:
+            mask_prompt_seq_len = mask_prompt_inputs.shape[0]
+            if bs is not None:
+                assert bs == mask_prompt_inputs.shape[1]
+            else:
+                bs = mask_prompt_inputs.shape[1]
+            if device is not None:
+                assert device == mask_prompt_inputs.device
+            else:
+                device = mask_prompt_inputs.device
+
+        return (
+            box_seq_len,
+            point_seq_len,
+            mask_seq_len,
+            mask_prompt_seq_len,
+            bs,
+            device,
+        )
 
     def _init_box(self, box_embeddings, box_labels, box_mask, box_seq_len, bs, device):
         if box_embeddings is None:
@@ -398,6 +453,24 @@ class Prompt:
             point_labels=(
                 None if self.point_labels is None else self.point_labels.clone()
             ),
+            mask_embeddings=(
+                None if self.mask_embeddings is None else self.mask_embeddings.clone()
+            ),
+            mask_mask=None if self.mask_mask is None else self.mask_mask.clone(),
+            mask_labels=None if self.mask_labels is None else self.mask_labels.clone(),
+            mask_prompt_inputs=(
+                None
+                if self.mask_prompt_inputs is None
+                else self.mask_prompt_inputs.clone()
+            ),
+            mask_prompt_mask=(
+                None if self.mask_prompt_mask is None else self.mask_prompt_mask.clone()
+            ),
+            mask_prompt_labels=(
+                None
+                if self.mask_prompt_labels is None
+                else self.mask_prompt_labels.clone()
+            ),
         )
 
 
@@ -467,6 +540,107 @@ class FusedMaskEncoder(MaskEncoder):
         return x, pos
 
 
+class MaskPromptEncoder(nn.Module):
+    """Encode each raw mask prompt into exactly one geometry token."""
+
+    def __init__(
+        self,
+        d_model: int,
+        position_input_dim: int,
+        shape_size: int = 32,
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.shape_size = shape_size
+        self.mask_visual_project = nn.Linear(d_model, d_model)
+        self.mask_shape_encoder = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.GELU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.GELU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.GELU(),
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(1),
+        )
+        self.mask_shape_project = nn.Linear(128, d_model)
+        self.mask_pos_enc_project = nn.Linear(position_input_dim, d_model)
+        self.mask_label_embed = nn.Embedding(2, d_model)
+
+    def _encode_mask_visual(self, masks, img_feats):
+        n_masks, bs = masks.shape[:2]
+        feat_h, feat_w = img_feats.shape[-2:]
+        weights = torch.nn.functional.interpolate(
+            masks.flatten(0, 1).float(),
+            size=(feat_h, feat_w),
+            mode="area",
+        ).view(n_masks, bs, 1, feat_h, feat_w)
+        features = img_feats.unsqueeze(0)
+        pooled = (features * weights).sum(dim=(-2, -1))
+        pooled = pooled / weights.sum(dim=(-2, -1)).clamp_min(1e-6)
+        return self.mask_visual_project(pooled)
+
+    def _crop_resize_masks(self, masks, mask_padding_mask):
+        flat_masks = masks.flatten(0, 1).float()
+        count, _, height, width = flat_masks.shape
+        foreground = flat_masks[:, 0] > 0
+        xs = torch.arange(width, device=masks.device, dtype=torch.float32)
+        ys = torch.arange(height, device=masks.device, dtype=torch.float32)
+        x_grid = xs.view(1, 1, width).expand(count, height, width)
+        y_grid = ys.view(1, height, 1).expand(count, height, width)
+        inf = torch.tensor(float("inf"), device=masks.device)
+        x_min = x_grid.masked_fill(~foreground, inf).flatten(1).min(-1).values
+        y_min = y_grid.masked_fill(~foreground, inf).flatten(1).min(-1).values
+        x_max = x_grid.masked_fill(~foreground, -inf).flatten(1).max(-1).values + 1
+        y_max = y_grid.masked_fill(~foreground, -inf).flatten(1).max(-1).values + 1
+
+        padding = mask_padding_mask.transpose(0, 1).reshape(-1)
+        x_min = x_min.masked_fill(padding, 0)
+        y_min = y_min.masked_fill(padding, 0)
+        x_max = x_max.masked_fill(padding, 1)
+        y_max = y_max.masked_fill(padding, 1)
+        batch_indices = torch.arange(count, device=masks.device, dtype=torch.float32)
+        rois = torch.stack([batch_indices, x_min, y_min, x_max, y_max], dim=-1)
+        return torchvision.ops.roi_align(
+            flat_masks,
+            rois,
+            output_size=(self.shape_size, self.shape_size),
+            spatial_scale=1.0,
+            aligned=True,
+        )
+
+    def _encode_mask_shape(self, masks, mask_padding_mask):
+        n_masks, bs = masks.shape[:2]
+        crops = self._crop_resize_masks(masks, mask_padding_mask)
+        encoded = self.mask_shape_project(self.mask_shape_encoder(crops))
+        return encoded.view(n_masks, bs, self.d_model)
+
+    def forward(
+        self,
+        masks,
+        mask_labels,
+        mask_padding_mask,
+        img_feats,
+        position_inputs,
+    ):
+        padding_seq_mask = mask_padding_mask.transpose(0, 1)
+        foreground_area = masks.float().flatten(-2).sum(-1).squeeze(-1)
+        if torch.any((~padding_seq_mask) & (foreground_area <= 0)):
+            raise ValueError("A non-padding mask prompt contains no foreground pixels.")
+
+        safe_labels = mask_labels.long().masked_fill(padding_seq_mask, 0)
+        valid_labels = safe_labels[~padding_seq_mask]
+        if not torch.all((valid_labels == 0) | (valid_labels == 1)):
+            raise ValueError("Non-padding mask prompt labels must be either 0 or 1.")
+
+        visual_embed = self._encode_mask_visual(masks, img_feats)
+        shape_embed = self._encode_mask_shape(masks, mask_padding_mask)
+        position_embed = self.mask_pos_enc_project(position_inputs)
+        label_embed = self.mask_label_embed(safe_labels)
+        mask_tokens = visual_embed + shape_embed + position_embed + label_embed
+        return mask_tokens.masked_fill(padding_seq_mask.unsqueeze(-1), 0)
+
+
 class SequenceGeometryEncoder(nn.Module):
     """
     This a fully fledged encoder for geometric prompts.
@@ -506,6 +680,7 @@ class SequenceGeometryEncoder(nn.Module):
         add_post_encode_proj: bool = True,
         mask_encoder: MaskEncoder = None,
         add_mask_label: bool = False,
+        mask_prompt_encoder: MaskPromptEncoder = None,
         use_act_ckpt: bool = False,
     ):
         super().__init__()
@@ -584,6 +759,7 @@ class SequenceGeometryEncoder(nn.Module):
                 self.mask_label_embed = torch.nn.Embedding(2, self.d_model)
         self.add_mask_label = add_mask_label
         self.mask_encoder = mask_encoder
+        self.mask_prompt_encoder = mask_prompt_encoder
         self.use_act_ckpt = use_act_ckpt
 
     def _encode_points(self, points, points_mask, points_labels, img_feats):
@@ -714,6 +890,63 @@ class SequenceGeometryEncoder(nn.Module):
             masks = masks + self.mask_label_embed(mask_labels.long())
         return masks, attn_mask
 
+    def _compute_mask_geometry(self, masks, mask_padding_mask):
+        n_masks, bs, _, height, width = masks.shape
+        foreground = masks[:, :, 0].float()
+        area = foreground.sum(dim=(-2, -1))
+        safe_area = area.clamp_min(1)
+        xs = torch.arange(width, device=masks.device, dtype=foreground.dtype)
+        ys = torch.arange(height, device=masks.device, dtype=foreground.dtype)
+        cx = (foreground * (xs + 0.5)).sum(dim=(-2, -1)) / safe_area / width
+        cy = (foreground * (ys[:, None] + 0.5)).sum(dim=(-2, -1)) / safe_area / height
+
+        x_grid = xs.view(1, 1, 1, width)
+        y_grid = ys.view(1, 1, height, 1)
+        inf = torch.tensor(float("inf"), device=masks.device)
+        x_min = x_grid.masked_fill(foreground == 0, inf).flatten(-2).min(-1).values
+        y_min = y_grid.masked_fill(foreground == 0, inf).flatten(-2).min(-1).values
+        x_max = x_grid.masked_fill(foreground == 0, -inf).flatten(-2).max(-1).values
+        y_max = y_grid.masked_fill(foreground == 0, -inf).flatten(-2).max(-1).values
+        w = (x_max - x_min + 1) / width
+        h = (y_max - y_min + 1) / height
+        area_ratio = area / (height * width)
+
+        padding = mask_padding_mask.transpose(0, 1)
+        return tuple(
+            value.masked_fill(padding, 0)
+            for value in (cx, cy, w, h, area_ratio)
+        )
+
+    def _encode_mask_prompts(
+        self,
+        masks,
+        mask_padding_mask,
+        mask_labels,
+        img_feats,
+    ):
+        cx, cy, w, h, area_ratio = self._compute_mask_geometry(
+            masks, mask_padding_mask
+        )
+        pos_x, pos_y = self.pos_enc._encode_xy(cx.flatten(), cy.flatten())
+        position_inputs = torch.cat(
+            [
+                pos_y,
+                pos_x,
+                h.flatten().unsqueeze(-1),
+                w.flatten().unsqueeze(-1),
+                area_ratio.flatten().unsqueeze(-1),
+            ],
+            dim=-1,
+        ).view(masks.shape[0], masks.shape[1], self.d_model + 3)
+        tokens = self.mask_prompt_encoder(
+            masks=masks,
+            mask_labels=mask_labels,
+            mask_padding_mask=mask_padding_mask,
+            img_feats=img_feats,
+            position_inputs=position_inputs,
+        )
+        return tokens, mask_padding_mask
+
     def forward(self, geo_prompt: Prompt, img_feats, img_sizes, img_pos_embeds=None):
         points = geo_prompt.point_embeddings
         points_mask = geo_prompt.point_mask
@@ -724,6 +957,9 @@ class SequenceGeometryEncoder(nn.Module):
         masks = geo_prompt.mask_embeddings
         masks_mask = geo_prompt.mask_mask
         masks_labels = geo_prompt.mask_labels
+        mask_prompt_inputs = geo_prompt.mask_prompt_inputs
+        mask_prompt_mask = geo_prompt.mask_prompt_mask
+        mask_prompt_labels = geo_prompt.mask_prompt_labels
         seq_first_img_feats = img_feats[-1]  # [H*W, B, C]
         seq_first_img_pos_embeds = (
             img_pos_embeds[-1]
@@ -731,7 +967,11 @@ class SequenceGeometryEncoder(nn.Module):
             else torch.zeros_like(seq_first_img_feats)
         )
 
-        if self.points_pool_project or self.boxes_pool_project:
+        if (
+            self.points_pool_project
+            or self.boxes_pool_project
+            or self.mask_prompt_encoder is not None
+        ):
             assert len(img_feats) == len(img_sizes)
             cur_img_feat = img_feats[-1]
             cur_img_feat = self.img_pre_norm(cur_img_feat)
@@ -785,7 +1025,35 @@ class SequenceGeometryEncoder(nn.Module):
             img_feats=img_feats,
         )
 
-        if not self.encode_boxes_as_points:
+        has_valid_box_prompt = (
+            boxes is not None
+            and boxes_mask is not None
+            and bool((~boxes_mask).any())
+        )
+        has_valid_mask_prompt = (
+            mask_prompt_inputs is not None
+            and mask_prompt_mask is not None
+            and bool((~mask_prompt_mask).any())
+        )
+        if has_valid_box_prompt and has_valid_mask_prompt:
+            raise ValueError(
+                "Box prompts and single-token mask prompts are mutually exclusive."
+            )
+
+        if has_valid_mask_prompt:
+            mask_prompt_embeds, mask_prompt_mask = self._encode_mask_prompts(
+                masks=mask_prompt_inputs,
+                mask_padding_mask=mask_prompt_mask,
+                mask_labels=mask_prompt_labels,
+                img_feats=img_feats,
+            )
+            final_embeds, final_mask = concat_padded_sequences(
+                final_embeds,
+                final_mask,
+                mask_prompt_embeds,
+                mask_prompt_mask,
+            )
+        elif not self.encode_boxes_as_points:
             boxes_embeds, boxes_mask = self._encode_boxes(
                 boxes=boxes,
                 boxes_mask=boxes_mask,

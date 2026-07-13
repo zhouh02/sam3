@@ -406,6 +406,9 @@ class CustomCocoDetectionAPI(VisionDataset):
                     image_id=id2index_img[query["image_id"]],
                     input_bbox=bbox,
                     input_bbox_label=bbox_label,
+                    input_mask=query.get("input_mask"),
+                    input_mask_label=query.get("input_mask_label"),
+                    input_mask_object_id=query.get("input_mask_object_id"),
                     input_points=points,
                     object_ids_output=[
                         id2index_obj[obj_id] for obj_id in query["object_ids_output"]
