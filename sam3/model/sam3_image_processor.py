@@ -152,6 +152,24 @@ class Sam3Processor:
 
         return self._forward_grounding(state)
 
+    @torch.inference_mode()
+    def add_point_prompt(self, point: List, label: bool, state: Dict):
+        """Add a normalized [x, y] PCS point (True: positive, False: negative)."""
+        if "backbone_out" not in state:
+            raise ValueError("You must call set_image before add_point_prompt")
+        if len(point) != 2 or not all(0 <= value <= 1 for value in point):
+            raise ValueError("Point must contain normalized x, y in [0, 1]")
+        if "language_features" not in state["backbone_out"]:
+            state["backbone_out"].update(
+                self.model.backbone.forward_text(["visual"], device=self.device)
+            )
+        if "geometric_prompt" not in state:
+            state["geometric_prompt"] = self.model._get_dummy_prompt()
+        points = torch.tensor(point, device=self.device, dtype=torch.float32).view(1, 1, 2)
+        labels = torch.tensor([label], device=self.device, dtype=torch.long).view(1, 1)
+        state["geometric_prompt"].append_points(points, labels)
+        return self._forward_grounding(state)
+
     def reset_all_prompts(self, state: Dict):
         """Removes all the prompts and results"""
         if "backbone_out" in state:

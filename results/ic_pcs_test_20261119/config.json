@@ -1,0 +1,27 @@
+{
+  "dataset": "E:\\Code\\Datasets\\ic\\coco_pcs",
+  "dataset_name": "coco_pcs",
+  "image_root": "E:\\Code\\Datasets\\ic\\coco_pcs\\images\\test2017",
+  "annotations": "E:\\Code\\Datasets\\ic\\coco_pcs\\annotations\\instances_test2017.json",
+  "annotations_sha256": "a63d08f566e8fd3c341d6237a47504398050f911d9e19604e1d213afeee31aa9",
+  "checkpoint": "E:\\Code\\sam3\\sam3.pt",
+  "seed": 42,
+  "score_threshold": 0.0,
+  "union_threshold": 0.5,
+  "split": "test2017",
+  "split_images_total": 64,
+  "evaluated_images": 64,
+  "limit": 0,
+  "skipped": [],
+  "protocol": "one uniformly sampled nonempty GT instance mask tight axis-aligned box per image; no text; evaluate all instances of the sampled category on that image, including prompted instance",
+  "mask_threshold": 0.5,
+  "coco_max_dets": [
+    1,
+    10,
+    100
+  ],
+  "status": "complete",
+  "torch_version": "2.10.0+cu128",
+  "gpu": "NVIDIA GeForce RTX 4060 Ti",
+  "precision": "CUDA BF16 autocast"
+}

@@ -1,0 +1,37 @@
+{
+  "protocol": "AP+",
+  "images": 3,
+  "queries": 3,
+  "instances_including_crowd": 7,
+  "inference_seconds_excluding_model_load": 45.50867750006728,
+  "coco": {
+    "bbox": {
+      "AP": 0.9224422442244224,
+      "AP_50": 1.0,
+      "AP_75": 1.0,
+      "AP_small": null,
+      "AP_medium": 0.9056105610561056,
+      "AP_large": 0.9999999999999998,
+      "AR_maxDets@1": 0.43333333333333335,
+      "AR_maxDets@10": 0.9222222222222223,
+      "AR_maxDets@100": 0.9222222222222223,
+      "AR_small": null,
+      "AR_medium": 0.9055555555555556,
+      "AR_large": 1.0
+    },
+    "segm": {
+      "AP": 0.6968096809680967,
+      "AP_50": 1.0,
+      "AP_75": 0.7227722772277227,
+      "AP_small": null,
+      "AP_medium": 0.6631463146314631,
+      "AP_large": 0.9999999999999998,
+      "AR_maxDets@1": 0.3333333333333333,
+      "AR_maxDets@10": 0.7277777777777779,
+      "AR_maxDets@100": 0.7277777777777779,
+      "AR_small": null,
+      "AR_medium": 0.6944444444444445,
+      "AR_large": 1.0
+    }
+  }
+}

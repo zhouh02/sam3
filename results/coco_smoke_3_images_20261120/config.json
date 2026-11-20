@@ -1,0 +1,41 @@
+{
+  "status": "complete",
+  "protocol": "visual-only single GT bbox per positive image/category pair; AP+",
+  "annotations": "E:\\Code\\Datasets\\COCO\\annotations\\instances_val2017.json",
+  "annotations_sha256": "a0f1294801522f6a87ad35c08ceda5049957f0f3fbfff0d299b4fe627c0e5483",
+  "image_root": "E:\\Code\\Datasets\\COCO\\images\\val2017",
+  "split": "val2017",
+  "dataset_images": 328,
+  "evaluated_images": 3,
+  "positive_queries": 3,
+  "limit": 3,
+  "seed": 42,
+  "sampling": "random.Random(seed:image_id:category_id), sorted annotation IDs",
+  "crowd_prompt_policy": "included, matching COCO_FROM_JSON + TextQueryToVisual",
+  "replayed_prompts": null,
+  "checkpoint": "E:\\Code\\sam3\\sam3.pt",
+  "iou_types": [
+    "bbox",
+    "segm"
+  ],
+  "max_dets_per_image_across_categories": 100,
+  "coco_max_dets": [
+    1,
+    10,
+    100
+  ],
+  "score_threshold": 0.0,
+  "mask_threshold": 0.5,
+  "presence_score": true,
+  "resolution": 1008,
+  "text": "visual",
+  "python": "3.12.16",
+  "note": "Public-protocol reproduction; not the authors' exact COCO sampling/config. Only positive queries are inferred.",
+  "prompts_sha256": "f95fb2d9a6a81ec504894b17f3624cc642bcea7040f3ee8a464ea42836e37d96",
+  "checkpoint_sha256": "9999e2341ceef5e136daa386eecb55cb414446a00ac2b55eb2dfd2f7c3cf8c9e",
+  "torch_version": "2.10.0+cu128",
+  "cuda_version": "12.8",
+  "gpu": "NVIDIA GeForce RTX 4060 Ti",
+  "precision": "CUDA BF16 autocast",
+  "git_commit": "f1647e8d0c1d280991f4d1b7d974c2704537fe66"
+}

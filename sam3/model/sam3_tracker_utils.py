@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from numpy.typing import NDArray
-from sam3.model.edt import edt_triton
 
 
 def sample_box_points(
@@ -151,6 +150,10 @@ def sample_one_point_from_error_center(gt_masks, pred_masks, padding=True):
     - points: [B, 1, 2], dtype=torch.float, contains (x, y) coordinates of each sampled point
     - labels: [B, 1], dtype=torch.int32, where 1 means positive clicks and 0 means negative clicks
     """
+    # Image PCS does not use this training-time click sampler. Import its
+    # Triton kernel only when sampling is actually requested.
+    from sam3.model.edt import edt_triton
+
     if pred_masks is None:
         pred_masks = torch.zeros_like(gt_masks)
     assert gt_masks.dtype == torch.bool and gt_masks.size(1) == 1

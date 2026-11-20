@@ -144,6 +144,10 @@ logs/
 runs/
 tensorboard/
 
+# Local predictions, debug runs, and experiment workbook staging.
+# Curated evaluation summaries are versioned separately under results/.
+/outputs/
+
 # OS specific
 .DS_Store
 Thumbs.db
