@@ -1,0 +1,283 @@
+paths:
+  coco_root: data/coco
+  sam3_checkpoint: sam3.pt
+  bpe_path: sam3/assets/bpe_simple_vocab_16e6.txt.gz
+  experiment_log_dir: outputs/box_prompt_b
+scratch:
+  enable_segmentation: true
+  resolution: 1008
+  train_norm_mean:
+  - 0.5
+  - 0.5
+  - 0.5
+  train_norm_std:
+  - 0.5
+  - 0.5
+  - 0.5
+  val_norm_mean:
+  - 0.5
+  - 0.5
+  - 0.5
+  val_norm_std:
+  - 0.5
+  - 0.5
+  - 0.5
+  train_batch_size: 1
+  val_batch_size: 1
+  stage1_lr: 0.0001
+  num_train_workers: 0
+  num_val_workers: 0
+  max_epochs: 3
+  wd: 0.1
+  gather_pred_via_filesys: true
+  matcher:
+    _target_: sam3.train.matcher.BinaryHungarianMatcherV2
+    focal: true
+    cost_class: 2.0
+    cost_bbox: 5.0
+    cost_giou: 2.0
+    alpha: 0.25
+    gamma: 2
+    stable: false
+  train_transforms:
+  - _target_: sam3.train.transforms.basic_for_api.ComposeAPI
+    transforms:
+    - _target_: sam3.train.transforms.segmentation.DecodeRle
+    - _target_: sam3.train.transforms.basic_for_api.RandomResizeAPI
+      sizes: ${scratch.resolution}
+      max_size:
+        _target_: sam3.train.transforms.basic.get_random_resize_max_size
+        size: ${scratch.resolution}
+      square: true
+      consistent_transform: false
+    - _target_: sam3.train.transforms.basic_for_api.ToTensorAPI
+    - _target_: sam3.train.transforms.basic_for_api.NormalizeAPI
+      mean: ${scratch.train_norm_mean}
+      std: ${scratch.train_norm_std}
+  val_transforms:
+  - _target_: sam3.train.transforms.basic_for_api.ComposeAPI
+    transforms:
+    - _target_: sam3.train.transforms.segmentation.DecodeRle
+    - _target_: sam3.train.transforms.basic_for_api.RandomResizeAPI
+      sizes: ${scratch.resolution}
+      max_size:
+        _target_: sam3.train.transforms.basic.get_random_resize_max_size
+        size: ${scratch.resolution}
+      square: true
+      consistent_transform: false
+    - _target_: sam3.train.transforms.basic_for_api.ToTensorAPI
+    - _target_: sam3.train.transforms.basic_for_api.NormalizeAPI
+      mean: ${scratch.val_norm_mean}
+      std: ${scratch.val_norm_std}
+  bbox_postprocessor:
+    _target_: sam3.eval.postprocessors.PostProcessImage
+    max_dets_per_img: 100
+    use_original_ids: true
+    use_original_sizes_box: true
+    use_presence: true
+  segm_postprocessor:
+    _target_: sam3.eval.postprocessors.PostProcessImage
+    max_dets_per_img: 100
+    iou_type: segm
+    use_original_ids: true
+    use_original_sizes_box: true
+    use_original_sizes_mask: true
+    convert_mask_to_rle: true
+    use_presence: true
+trainer:
+  _target_: sam3.train.box_prompt.trainer.BoxPromptTrainer
+  mode: train
+  accelerator: cuda
+  seed_value: 123
+  max_epochs: ${scratch.max_epochs}
+  val_epoch_freq: 1
+  skip_first_val: false
+  skip_saving_ckpts: false
+  empty_gpu_mem_cache_after_eval: true
+  gradient_accumulation_steps: 1
+  distributed:
+    backend: nccl
+    find_unused_parameters: true
+    gradient_as_bucket_view: true
+  model:
+    _target_: sam3.train.box_prompt.model.build_model
+    checkpoint_path: ${paths.sam3_checkpoint}
+    initialization: official
+    bpe_path: ${paths.bpe_path}
+    device: cpu
+    eval_mode: false
+  loss:
+    all:
+      _target_: sam3.train.loss.sam3_loss.Sam3LossWrapper
+      matcher: ${scratch.matcher}
+      o2m_weight: 2.0
+      o2m_matcher:
+        _target_: sam3.train.matcher.BinaryOneToManyMatcher
+        alpha: 0.3
+        threshold: 0.4
+        topk: 4
+      use_o2m_matcher_on_o2m_aux: false
+      loss_fns_find:
+      - _target_: sam3.train.loss.loss_fns.Boxes
+        weight_dict:
+          loss_bbox: 5.0
+          loss_giou: 2.0
+      - _target_: sam3.train.loss.loss_fns.IABCEMdetr
+        weak_loss: false
+        weight_dict:
+          loss_ce: 20.0
+          presence_loss: 20.0
+        pos_weight: 10.0
+        alpha: 0.25
+        gamma: 2
+        use_presence: true
+        pos_focal: false
+        pad_n_queries: 200
+        pad_scale_pos: 1.0
+      - _target_: sam3.train.loss.loss_fns.Masks
+        focal_alpha: 0.25
+        focal_gamma: 2.0
+        weight_dict:
+          loss_mask: 200.0
+          loss_dice: 10.0
+        compute_aux: false
+      loss_fn_semantic_seg: null
+      scale_by_find_batch_size: true
+    default:
+      _target_: sam3.train.loss.sam3_loss.DummyLoss
+  data:
+    train:
+      _target_: sam3.train.data.torch_dataset.TorchDataset
+      dataset:
+        _target_: sam3.train.data.sam3_image_dataset.Sam3ImageDataset
+        img_folder: ${paths.coco_root}/images/train2017
+        ann_file: ${paths.coco_root}/annotations/instances_train2017.json
+        coco_json_loader:
+          _target_: sam3.train.box_prompt.data.BoxPromptCOCO
+          _partial_: true
+          min_instances_per_prompt_category: 2
+          category_chunk_size: 2
+          prompt_sampling_policy: random
+          text_mode: category
+        transforms: ${scratch.train_transforms}
+        load_segmentation: ${scratch.enable_segmentation}
+        max_ann_per_img: 100000
+        multiplier: 1
+        max_train_queries: 100000
+        max_val_queries: 100000
+        training: true
+        use_caching: false
+      shuffle: true
+      batch_size: ${scratch.train_batch_size}
+      num_workers: ${scratch.num_train_workers}
+      pin_memory: true
+      drop_last: true
+      collate_fn:
+        _target_: sam3.train.data.collator.collate_fn_api
+        _partial_: true
+        repeats: 1
+        dict_key: all
+        with_seg_masks: ${scratch.enable_segmentation}
+    val:
+      _target_: sam3.train.data.torch_dataset.TorchDataset
+      dataset:
+        _target_: sam3.train.data.sam3_image_dataset.Sam3ImageDataset
+        img_folder: ${paths.coco_root}/images/val2017
+        ann_file: ${paths.coco_root}/annotations/instances_val2017.json
+        coco_json_loader:
+          _target_: sam3.train.box_prompt.data.BoxPromptCOCO
+          _partial_: true
+          min_instances_per_prompt_category: 2
+          category_chunk_size: 2
+          prompt_sampling_policy: median_area
+          text_mode: category
+        transforms: ${scratch.val_transforms}
+        load_segmentation: ${scratch.enable_segmentation}
+        max_ann_per_img: 100000
+        multiplier: 1
+        max_train_queries: 100000
+        max_val_queries: 100000
+        training: false
+        use_caching: false
+      shuffle: false
+      batch_size: ${scratch.val_batch_size}
+      num_workers: ${scratch.num_val_workers}
+      pin_memory: true
+      drop_last: false
+      collate_fn:
+        _target_: sam3.train.data.collator.collate_fn_api
+        _partial_: true
+        repeats: 1
+        dict_key: coco
+        with_seg_masks: ${scratch.enable_segmentation}
+  meters:
+    val:
+      coco:
+        bbox:
+          _target_: sam3.eval.coco_writer.PredictionDumper
+          iou_type: bbox
+          dump_dir: ${paths.experiment_log_dir}/dumps/bbox
+          merge_predictions: true
+          postprocessor: ${scratch.bbox_postprocessor}
+          gather_pred_via_filesys: ${scratch.gather_pred_via_filesys}
+          maxdets: 100
+          pred_file_evaluators:
+          - _target_: sam3.eval.coco_eval_offline.CocoEvaluatorOfflineWithPredFileEvaluators
+            gt_path: ${paths.coco_root}/annotations/instances_val2017.json
+            tide: false
+            iou_type: bbox
+        segm:
+          _target_: sam3.eval.coco_writer.PredictionDumper
+          iou_type: segm
+          dump_dir: ${paths.experiment_log_dir}/dumps/segm
+          merge_predictions: true
+          postprocessor: ${scratch.segm_postprocessor}
+          gather_pred_via_filesys: ${scratch.gather_pred_via_filesys}
+          maxdets: 100
+          pred_file_evaluators:
+          - _target_: sam3.eval.coco_eval_offline.CocoEvaluatorOfflineWithPredFileEvaluators
+            gt_path: ${paths.coco_root}/annotations/instances_val2017.json
+            tide: false
+            iou_type: segm
+  optim:
+    amp:
+      enabled: true
+      amp_dtype: bfloat16
+    optimizer:
+      _target_: torch.optim.AdamW
+    gradient_clip:
+      _target_: sam3.train.optim.optimizer.GradientClipper
+      max_norm: 0.1
+      norm_type: 2
+    options:
+      lr:
+      - scheduler:
+          _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+          value: ${scratch.stage1_lr}
+      weight_decay:
+      - scheduler:
+          _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+          value: ${scratch.wd}
+      - scheduler:
+          _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+          value: 0.0
+        param_names:
+        - '*bias*'
+  checkpoint:
+    save_dir: ${paths.experiment_log_dir}/checkpoints
+    save_freq: 1
+    save_list: []
+    model_weight_initializer: null
+    resume_from: null
+  logging:
+    tensorboard_writer:
+      _target_: sam3.train.utils.logger.make_tensorboard_logger
+      log_dir: ${paths.experiment_log_dir}/tensorboard
+      flush_secs: 120
+      should_log: true
+    wandb_writer: null
+    log_dir: ${paths.experiment_log_dir}/logs
+    log_freq: 10
+launcher:
+  num_nodes: 1
+  gpus_per_node: 1

@@ -1,5 +1,9 @@
 # Training
 
+For experiment B (only the three native box input projections and label embedding
+are trainable), see [README_BOX_PROMPT_TRAIN.md](README_BOX_PROMPT_TRAIN.md).
+Launch it with `python scripts/train_box_prompt.py train --data-root /path/to/coco --output outputs/box_prompt_b`.
+
 This repository supports finetuning SAM3 models on custom datasets in multi-node setup or local execution. The training script is located at `sam3/train.py` and uses Hydra configuration management to handle complex training setups.
 
 
